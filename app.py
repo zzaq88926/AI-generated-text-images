@@ -35,7 +35,7 @@ def main():
     # 側邊欄：API Key 設定
     with st.sidebar:
         st.header("設定")
-        api_key_input = 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
+        api_key_input = "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"
         if api_key_input:
             # 去除前後空白，避免複製貼上時多餘的空格導致錯誤
             os.environ["HUGGINGFACE_TOKEN"] = api_key_input.strip()
