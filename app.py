@@ -34,17 +34,46 @@ def main():
 
     # 側邊欄：API Key 設定
     with st.sidebar:
-        st.header("設定")
-        api_key_input = "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"
+        # 嘗試從環境變數載入 Token (本地開發用)
+        default_token = os.getenv("HUGGINGFACE_TOKEN", "")
+        api_key_input = st.text_input("Hugging Face Token", value=default_token, type="password", help="請輸入你的 Hugging Face Access Token (需有 Write 權限)")
+        
         if api_key_input:
             # 去除前後空白，避免複製貼上時多餘的空格導致錯誤
             os.environ["HUGGINGFACE_TOKEN"] = api_key_input.strip()
+        
+        if st.button("🔍 測試 Token 有效性"):
+            if not api_key_input:
+                st.error("請先輸入 Token")
+            else:
+                try:
+                    from huggingface_hub import HfApi
+                    api = HfApi(token=api_key_input.strip())
+                    user_info = api.whoami()
+                    username = user_info.get('name', 'User')
+                    st.success(f"Token 有效！你好, {username}。")
+                except Exception as e:
+                    st.error(f"Token 無效或無法連線: {e}")
         
         st.info("💡 使用 Hugging Face 免費 API (文字) + 本地 Diffusers (繪圖)。第一次執行繪圖需下載模型 (約 4GB)，請耐心等候。")
         
         with st.expander("進階設定 (更換模型)"):
             text_model = st.text_input("文字模型 ID", value="Qwen/Qwen2.5-72B-Instruct", help="例如: Qwen/Qwen2.5-72B-Instruct, google/gemma-2-9b-it")
-            image_model = st.text_input("繪圖模型 ID (本地)", value="runwayml/stable-diffusion-v1-5", help="例如: runwayml/stable-diffusion-v1-5")
+            
+            # 提供多個備選模型，讓使用者在 API 忙碌時可以切換
+            model_options = [
+                "runwayml/stable-diffusion-v1-5",
+                "CompVis/stable-diffusion-v1-4",
+                "prompthero/openjourney",
+                "stabilityai/stable-diffusion-2-1",
+                "Custom (自訂)"
+            ]
+            selected_model = st.selectbox("繪圖模型 ID", model_options, index=0, help="若預設模型忙碌，請嘗試切換其他模型。")
+            
+            if selected_model == "Custom (自訂)":
+                image_model = st.text_input("請輸入自訂模型 ID", value="runwayml/stable-diffusion-v1-5")
+            else:
+                image_model = selected_model
 
     # 初始化 session state
     if "use_local_mode" not in st.session_state:
