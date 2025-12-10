@@ -4,7 +4,3 @@ python-dotenv
 requests
 Pillow
 huggingface_hub
-diffusers
-transformers
-accelerate
-torch

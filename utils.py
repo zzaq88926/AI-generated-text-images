@@ -1,10 +1,10 @@
 import os
+import time
+import random
 import json
 from PIL import Image
 from dotenv import load_dotenv
 from huggingface_hub import InferenceClient
-import torch
-from diffusers import StableDiffusionPipeline
 
 # 載入環境變數
 load_dotenv()
@@ -24,32 +24,7 @@ def get_client():
         return None
     return InferenceClient(token=token)
 
-def load_image_pipeline(model_id=DEFAULT_REPO_ID_IMAGE):
-    """
-    載入本地 Stable Diffusion 模型 (Diffusers)。
-    這會下載模型權重 (約 4GB)，建議使用 cache。
-    """
-    token = os.getenv("HUGGINGFACE_TOKEN")
-    
-    print(f"Loading local pipeline for: {model_id}")
-    
-    # 判斷是否有 GPU
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Running on device: {device}")
-    
-    try:
-        pipe = StableDiffusionPipeline.from_pretrained(
-            model_id, 
-            use_auth_token=token,
-            torch_dtype=torch.float16 if device == "cuda" else torch.float32
-        )
-        pipe = pipe.to(device)
-        # 啟用記憶體優化 (如果有的話)
-        # pipe.enable_attention_slicing() 
-        return pipe
-    except Exception as e:
-        print(f"Error loading pipeline: {e}")
-        raise e # 將錯誤拋出，讓前端可以顯示
+
 
 def analyze_diary(text, model_id=DEFAULT_REPO_ID_TEXT):
     """
@@ -123,7 +98,7 @@ def analyze_diary(text, model_id=DEFAULT_REPO_ID_TEXT):
 
 def generate_image_api(prompt, model_id=DEFAULT_REPO_ID_IMAGE):
     """
-    使用 Hugging Face InferenceClient 生成圖片 (API 模式)。
+    單次嘗試生成圖片 (內部使用)。
     """
     if not prompt:
         return None
@@ -140,20 +115,47 @@ def generate_image_api(prompt, model_id=DEFAULT_REPO_ID_IMAGE):
         )
         return image
     except Exception as e:
-        print(f"Error in generate_image_api: {e}")
-        return None
+        print(f"Error in generate_image_api ({model_id}): {e}")
+        raise e
 
-def generate_image_local(pipeline, prompt):
+def generate_image_with_retry_and_fallback(prompt, model_list, status_callback=None):
     """
-    使用本地 Diffusers Pipeline 生成圖片 (本地模式)。
+    嘗試生成圖片，包含重試機制與模型自動切換 (Fallback)。
+    
+    Args:
+        prompt (str): 圖片提示詞
+        model_list (list): 模型 ID 列表 (優先順序)
+        status_callback (callable): 用於更新 UI 狀態的回呼函數 (msg, state)
+    
+    Returns:
+        tuple: (image, success_model_id) or (None, None)
     """
-    if not prompt or not pipeline:
-        return None
+    if not prompt or not model_list:
+        return None, None
 
-    try:
-        # 生成圖片
-        image = pipeline(prompt).images[0]
-        return image
-    except Exception as e:
-        print(f"Error in generate_image_local: {e}")
-        return None
+    max_retries_per_model = 2
+    
+    for model_id in model_list:
+        if status_callback:
+            status_callback(f"正在嘗試模型: {model_id}...", "running")
+            
+        for attempt in range(max_retries_per_model + 1):
+            try:
+                print(f"Attempt {attempt+1}/{max_retries_per_model+1} for model {model_id}")
+                image = generate_image_api(prompt, model_id)
+                if image:
+                    return image, model_id
+            except Exception as e:
+                print(f"Failed attempt {attempt+1} for {model_id}: {e}")
+                if attempt < max_retries_per_model:
+                    wait_time = (attempt + 1) * 2 + random.uniform(0, 1) # Exponential backoff with jitter
+                    if status_callback:
+                        status_callback(f"模型 {model_id} 暫時忙碌，{int(wait_time)} 秒後重試 ({attempt+1}/{max_retries_per_model})...", "running")
+                    time.sleep(wait_time)
+                else:
+                    if status_callback:
+                        status_callback(f"模型 {model_id} 多次嘗試失敗，準備切換下一個模型...", "error")
+    
+    return None, None
+
+
