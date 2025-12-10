@@ -147,31 +147,101 @@ Solution:
 2. Or go to the Hugging Face website, find the `stabilityai` model page, and click "Agree and Access" to grant your token permission.
 3. "Busy" is better than "401". "Busy" means it will eventually work. "401" means it never will without action.
 
-[SESSION 5: HYBRID ARCHITECTURE & LOCAL FALLBACK]
+User:
+提供詳細的課程筆記 (SD 1.5, VAE, U-Net, CLIP, LoRA, Token 定義)。
 
-User: 
-I want to ensure that if the API is busy, it switches to local execution.
+Agent:
+根據課程筆記更新 `README.md`，新增「課程理論與實作對應」章節，將專案技術選型 (如使用 SD 1.5) 與課程理論 (如 Diffusion 架構) 進行連結，提升作業的學術價值。
 
-Agent: 
-I have implemented a hybrid approach.
-1. `utils.py` now contains `generate_image_local` using `diffusers`.
-2. `app.py` logic updated: try API first -> catch error -> try Local.
-3. Added `torch` and `diffusers` to `requirements.txt`.
+User:
+請將我的模型改成老師推薦的方式讓他可以運行 (使用 Diffusers + SD 1.5)。
 
-[SESSION 6: FINAL POLISHING]
+Agent:
+將圖片生成架構重構為使用本地 `diffusers` 套件。更新 `requirements.txt` 加入 `torch` 等依賴。修改 `utils.py` 與 `app.py` 實作 `StableDiffusionPipeline` 的本地載入與快取機制。
 
-User: 
-最後再次幫我整理剛剛輸入跟輸出的prompt跟readme並且告知我的預設token為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
-或直接幫我帶入當作預設
+User:
+可以先嘗試使用token的模型? 若生成不出來且大概率為api較忙碌的回應則詢問是否要下載本地端的執行?
 
-Agent: 
-1. Created `.env` file with the provided token.
-2. Updated `README.md` to document the Hybrid Mode and .env usage.
-3. Updated `agent_conversation_log.txt` (this file) to include the latest progress.
+Agent:
+實作混合模式 (Hybrid Mode)。預設使用 `generate_image_api`，若失敗則顯示切換按鈕。點擊後透過 `st.session_state` 切換至 `generate_image_local` 並重跑，兼顧便利性與穩定性。
 
-User: 
-I explicitly set the token in `.env` but it is not pre-filled in the UI.
+User:
+有出現下載模型的按鈕阿，但我按下去後再次測試仍然無法正常產生圖....並且也不知道到底有沒有下載成功等。
 
-Agent: 
-I identified the issue in `app.py`. The `st.text_input` was missing the `value` parameter to read from environment variables.
-Fixed `app.py` to correctly pre-fill the token using `os.getenv("HUGGINGFACE_TOKEN", "")`.
+Agent:
+優化 UI 回饋機制。在 `app.py` 加入 `st.status` 顯示模型下載與載入狀態，並在 `utils.py` 中將錯誤拋出以便前端顯示具體錯誤訊息 (如缺套件或網路問題)。新增側邊欄模式指示器。
+
+User:
+我嘗試後並沒有出現畫面會出現一個展開的狀態框。
+
+Agent:
+診斷為 Session State 未正確維持或 Cache 問題。將切換機制改為側邊欄的「手動勾選框 (Checkbox)」，並強制更新 Cache 函數名稱以確保重新載入。
+
+User:
+測試其回傳Token 無效或權限不足。
+
+Agent:
+在側邊欄新增「測試 Token 有效性」按鈕。
+(Debug) 發現 `InferenceClient` 沒有 `get_model_status` 方法，導致測試按鈕報錯。
+(Fix) 修正 `app.py`，改用標準的 `client.whoami()` 方法來驗證 Token。
+
+User:
+更換 Token 為 。
+
+Agent:
+確認使用者已在程式碼中更新 Token。
+重新修正 `app.py` 中的驗證邏輯 (因使用者回退了代碼)，確保測試按鈕能正常運作。
+
+User:
+Token 無效或無法連線: 'InferenceClient' object has no attribute 'whoami'。
+
+Agent:
+修正 `app.py`，改用 `huggingface_hub.HfApi` 類別來呼叫 `whoami()`，解決屬性錯誤問題。
+
+User:
+我改成這樣已經可以測試成功，但上傳 GitHub 時會跳出錯誤 Verify the identity of this Hugging Face User Access Token secret。
+
+Agent:
+這是一個安全警告，因為使用者將 Token 直接寫死 (Hardcode) 在程式碼中。
+修正 `app.py`，移除寫死的 Token 字串，恢復為 `st.text_input` 輸入框，確保 Token 不會被提交到版本控制系統中。
+
+User:
+但我這樣開啟時不會自動帶入 Token 了。
+
+Agent:
+實作標準的環境變數管理機制。建立 `.env` 儲存 Token，建立 `.gitignore` 排除 `.env` 上傳，並修改 `app.py` 讀取環境變數作為預設值。
+
+User:
+我又換了一個token 又出現 Token 無效或無法連線: 'InferenceClient' object has no attribute 'whoami'。
+
+Agent:
+發現 `app.py` 的代碼在多次編輯中被覆蓋，導致舊的錯誤代碼 (`client.whoami()`) 再次出現。
+執行終極修正，強制將 `app.py` 中的驗證邏輯替換為正確的 `HfApi` 實作。
+
+[SESSION 5: OPTIMIZATION & REFACTORING]
+
+User:
+幫我把本地端模型的相關功能移除。
+
+Agent:
+Analyzed `app.py`, `utils.py`, and `requirements.txt`.
+Created an implementation plan to remove all local model code and dependencies (`torch`, `diffusers`, etc.) to make the app lightweight and API-dependent only.
+Executed the plan:
+- Removed "Local Mode" UI and logic from `app.py`.
+- Removed `load_image_pipeline` and `generate_image_local` from `utils.py`.
+- Cleaned up `requirements.txt`.
+
+User:
+並想辦法幫我盡量增強api繪圖的成功機率。目前成功率太低，比方說會自動多呼叫幾次或失敗自動換模型在測試之類的。
+
+Agent:
+Designed and implemented a robust retry and fallback mechanism in `utils.py`:
+- `generate_image_with_retry_and_fallback`: Retries generation up to 3 times per model with exponential backoff.
+- Automatic Fallback: If one model fails, it automatically switches to the next available model (e.g., SD 1.5 -> SD 1.4 -> OpenJourney).
+- Updated `app.py` to use this new function and provide real-time status updates (`st.status`) to the user, showing exactly which model is being tried and if retries are happening.
+
+User:
+最後再幫我更新一次log紀錄，幫我把至今跟agent的對話都記錄上去。
+
+Agent:
+Updating `agent_conversation_log.txt` to include these latest optimization steps.
